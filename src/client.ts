@@ -2,7 +2,7 @@
  * Copyright (c) 2018 TypeFox GmbH (http://www.typefox.io). All rights reserved.
  * Licensed under the MIT License. See License.txt in the project root for license information.
  * ------------------------------------------------------------------------------------------ */
-import { getLanguageService, getJSONLanguageService, TextDocument, parse7 as parseYaml7, parse4 as parseYaml4 ,SchemaRequestService, CustomFormatterOptions } from "yaml-language-server";
+import { getLanguageService, TextDocument, SchemaRequestService, CustomFormatterOptions } from "yaml-language-server";
 import { MonacoToProtocolConverter, ProtocolToMonacoConverter } from 'monaco-languageclient/lib/monaco-converter';
 import * as URL from 'url';
 
@@ -55,21 +55,11 @@ const workspaceContext = {
 const m2p = new MonacoToProtocolConverter();
 const p2m = new ProtocolToMonacoConverter();
 const yamlService = getLanguageService( resolveSchema, workspaceContext, []);
-const jsonLanguageService = getJSONLanguageService({
-    schemaRequestService: resolveSchema,
-    workspaceContext
-});
 const schemas = [{
   uri:  'https://raw.githubusercontent.com/garethr/kubernetes-json-schema/master/v1.14.0-standalone-strict/all.json',
   fileMatch: [ "*"]
 }];
-jsonLanguageService.configure({
-  allowComments: true,
-  validate: true,
-  schemas: schemas
-});
 yamlService.configure({
-  allowComments: true,
   validate: true,
   schemas: schemas,
   hover: true,
@@ -81,8 +71,7 @@ const pendingValidationRequests = new Map<string, number>();
 monaco.languages.registerCompletionItemProvider(LANGUAGE_ID, {
     provideCompletionItems(model, position, token): monaco.languages.CompletionItem[] | Thenable<monaco.languages.CompletionItem[]> | monaco.languages.CompletionList | Thenable<monaco.languages.CompletionList> {
         const document = createDocument(model);
-        const yamlDocument = parseYaml4(document.getText());
-        return yamlService.doComplete(document, m2p.asPosition(position.lineNumber, position.column), yamlDocument).then((list) => {
+        return yamlService.doComplete(document, m2p.asPosition(position.lineNumber, position.column), true).then((list) => {
             return p2m.asCompletionResult(list);
         });
     },
@@ -111,16 +100,14 @@ monaco.languages.registerDocumentFormattingEditProvider(LANGUAGE_ID, {
 monaco.languages.registerDocumentSymbolProvider(LANGUAGE_ID, {
     provideDocumentSymbols(model, token): monaco.languages.DocumentSymbol[] | Thenable<monaco.languages.DocumentSymbol[]> {
         const document = createDocument(model);
-        const yamlDocument = parseYaml7(document.getText());
-        return p2m.asSymbolInformations(yamlService.findDocumentSymbols(jsonLanguageService, document, yamlDocument));
+        return p2m.asSymbolInformations(yamlService.findDocumentSymbols(document));
     }
 });
 
 monaco.languages.registerHoverProvider(LANGUAGE_ID, {
     provideHover(model, position, token): monaco.languages.Hover | Thenable<monaco.languages.Hover> {
         const document = createDocument(model);
-        const yamlDocument = parseYaml7(document.getText());
-        return yamlService.doHover(jsonLanguageService, document, m2p.asPosition(position.lineNumber, position.column), yamlDocument).then((hover) => {
+        return yamlService.doHover( document, m2p.asPosition(position.lineNumber, position.column)).then((hover) => {
             return p2m.asHover(hover)!;
         });
     }
@@ -152,8 +139,7 @@ function doValidate(document: TextDocument): void {
         cleanDiagnostics();
         return;
     }
-    const yamlDocument = parseYaml7(document.getText());
-    yamlService.doValidation(jsonLanguageService, document, yamlDocument, true).then((diagnostics) => {
+    yamlService.doValidation( document, true).then((diagnostics) => {
         const markers = p2m.asDiagnostics(diagnostics);
         monaco.editor.setModelMarkers(getModel(), 'default', markers);
     });
